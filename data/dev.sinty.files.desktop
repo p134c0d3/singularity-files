@@ -1,0 +1,10 @@
+[Desktop Entry]
+Name=Files
+Comment=Access and organize files
+Exec=singularity-files
+Icon=dev.sinty.files
+Type=Application
+Categories=System;FileTools;FileManager;
+MimeType=inode/directory;
+StartupNotify=true
+StartupWMClass=dev.sinty.files

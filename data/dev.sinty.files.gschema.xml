@@ -1,0 +1,45 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<schemalist>
+  <schema id="dev.sinty.files" path="/dev/sinty/files/">
+    <key name="show-hidden" type="b">
+      <default>false</default>
+      <summary>Show hidden files</summary>
+      <description>Whether to show hidden files in the file manager.</description>
+    </key>
+    <key name="view-mode" type="s">
+      <default>'list'</default>
+      <summary>View mode</summary>
+      <description>The view mode of the file manager (list, grid, or column).</description>
+    </key>
+    <key name="sort-method" type="s">
+      <default>'name'</default>
+      <summary>Sort method</summary>
+      <description>The method used to sort files (name, size, type, date).</description>
+    </key>
+    <key name="show-sidebar" type="b">
+      <default>true</default>
+      <summary>Show sidebar</summary>
+      <description>Whether to show the sidebar in the file manager.</description>
+    </key>
+    <key name="sort-order" type="s">
+      <default>'ascending'</default>
+      <summary>Sort order</summary>
+      <description>The order used to sort files (ascending, descending).</description>
+    </key>
+    <key name="show-previews" type="b">
+      <default>true</default>
+      <summary>Show previews</summary>
+      <description>Whether to show file previews.</description>
+    </key>
+    <key name="last-folder" type="s">
+      <default>''</default>
+      <summary>Last visited folder</summary>
+      <description>URI of the last folder visited in the file manager or picker.</description>
+    </key>
+    <key name="icon-size" type="i">
+      <default>48</default>
+      <summary>Grid icon size</summary>
+      <description>Size of icons in grid view (24–128 pixels).</description>
+    </key>
+  </schema>
+</schemalist>

@@ -1,0 +1,77 @@
+{
+    "schema-id": "dev.sinty.files",
+    "settings": [
+        {
+            "key": "show-hidden",
+            "label": "Show Hidden Files",
+            "type": "boolean",
+            "widget": "switch"
+        },
+        {
+            "key": "show-previews",
+            "label": "Show Previews",
+            "type": "boolean",
+            "widget": "switch"
+        },
+        {
+            "key": "view-mode",
+            "label": "View Mode",
+            "type": "string",
+            "widget": "combo",
+            "options": [
+                {
+                    "id": "list",
+                    "label": "List View"
+                },
+                {
+                    "id": "grid",
+                    "label": "Grid View"
+                },
+                {
+                    "id": "column",
+                    "label": "Column View"
+                }
+            ]
+        },
+        {
+            "key": "sort-method",
+            "label": "Sort By",
+            "type": "string",
+            "widget": "combo",
+            "options": [
+                {
+                    "id": "name",
+                    "label": "Name"
+                },
+                {
+                    "id": "size",
+                    "label": "Size"
+                },
+                {
+                    "id": "type",
+                    "label": "Type"
+                },
+                {
+                    "id": "date",
+                    "label": "Date Modified"
+                }
+            ]
+        },
+        {
+            "key": "sort-order",
+            "label": "Sort Order",
+            "type": "string",
+            "widget": "combo",
+            "options": [
+                {
+                    "id": "ascending",
+                    "label": "Ascending"
+                },
+                {
+                    "id": "descending",
+                    "label": "Descending"
+                }
+            ]
+        }
+    ]
+}

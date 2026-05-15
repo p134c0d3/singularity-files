@@ -1,0 +1,8 @@
+HBox(id: "files_picker_ui_root", spacing: 0) {
+    ScrolledWindow(id: "content_scroll")
+
+    ScrolledWindow(id: "picker_sidebar") {
+        VBox(id: "picker_places", spacing: 2, marginBottom: 10, marginStart: 8, marginEnd: 8)
+            .cssClass("navigation-sidebar")
+    }
+}
