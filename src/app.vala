@@ -1400,6 +1400,16 @@ namespace Singularity.Apps {
             return false;
         }
 
+        private static bool is_image_file(FileItem item) {
+            string? ctype = item.info.get_content_type();
+            return ctype != null && ctype.has_prefix("image/");
+        }
+
+        private void set_as_wallpaper(FileItem item) {
+            var desktop_settings = new GLib.Settings("dev.sinty.desktop");
+            desktop_settings.set_string("background-picture-uri", item.file.get_uri());
+        }
+
         private void open_archive_as_folder(FileItem item) {
             string? src = item.file.get_path();
             if (src == null) return;
@@ -1610,6 +1620,11 @@ namespace Singularity.Apps {
                                 show_open_with_menu(widget, item, mx, my);
                                 return GLib.Source.REMOVE;
                             });
+                        });
+                    }
+                    if (is_image_file(item)) {
+                        menu.add_item("Set as Wallpaper", "preferences-desktop-wallpaper-symbolic", () => {
+                            set_as_wallpaper(item);
                         });
                     }
                 }
