@@ -53,16 +53,13 @@ namespace Singularity.Apps {
         private Button? toolbar_search_btn = null;
         private Box? _places_box = null;
         private Gee.HashMap<string, Button> _place_buttons = new Gee.HashMap<string, Button>();
+        private Gtk.Label? _file_count_lbl = null;
         private Box? _bookmarks_section = null;
         private Box? _devices_section = null;
         private GLib.VolumeMonitor? _volume_monitor = null;
         private GLib.FileMonitor? _bookmarks_file_monitor = null;
         // Miller columns state
-        private Box?           _col_browser_box = null;
-        private ScrolledWindow? _col_scroll = null;
-        private Box[]          _col_panes = {};
-        private Separator[]    _col_seps = {};
-        private ListBox[]      _col_lists = {};
+        private Singularity.Widgets.ColumnBrowser? _col_browser = null;
         private File[]         _col_folders = {};
         private int            _col_count = 0;
         private int            _col_viewport_start = 0;
@@ -90,9 +87,7 @@ namespace Singularity.Apps {
                 if (mode == "column") {
                     view_stack_ref.visible_child_name = "column";
                     if (current_folder != null && _col_count == 0) {
-                        _col_panes = {};
-                        _col_seps = {};
-                        _col_lists = {};
+                        if (_col_browser != null) _col_browser.clear();
                         _col_folders = {};
                         load_column_pane(0, current_folder);
                     }
@@ -358,11 +353,8 @@ namespace Singularity.Apps {
             window.set_title(title);
             window.set_default_size(950, 650);
 
-            // sidebar_btn stays always visible - pack it standalone before nav_box
-            var sidebar_btn = new Button.from_icon_name("sidebar-show-symbolic");
-            sidebar_btn.add_css_class("flat");
-            sidebar_btn.tooltip_text = "Toggle Sidebar";
-            window.toolbar.pack_start(sidebar_btn);
+            // Empty handler: the real one is wired later with settings persistence.
+            var sidebar_btn = window.add_bubble_icon("sidebar-show-symbolic", "Toggle Sidebar", () => {});
             sidebar_btn.visible = !picker_mode;
             // Back/Forward navigation buttons (non-picker only)
             if (!picker_mode) {
@@ -377,7 +369,7 @@ namespace Singularity.Apps {
                         navigate_to.begin(nav_history[nav_index]);
                     }
                 });
-                window.toolbar.pack_start(back_btn);
+                window.add_bubble_widget(back_btn);
                 fwd_btn = new Button.from_icon_name("go-next-symbolic");
                 fwd_btn.add_css_class("flat");
                 fwd_btn.visible = false;
@@ -389,27 +381,19 @@ namespace Singularity.Apps {
                         navigate_to.begin(nav_history[nav_index]);
                     }
                 });
-                window.toolbar.pack_start(fwd_btn);
+                window.add_bubble_widget(fwd_btn);
             }
-            // nav_box: only picker-mode extras (hidden when input is active)
-            var nav_box = new Box(Orientation.HORIZONTAL, 6);
-            nav_box_ref = nav_box;
             if (picker_mode) {
-                var cancel_btn = new Button.with_label("Cancel");
-                cancel_btn.add_css_class("flat");
-                cancel_btn.clicked.connect(() => {
+                window.add_bubble_text("Cancel", () => {
                     window.close();
                     if (portal_mode) quit();
                 });
-                nav_box.append(cancel_btn);
             }
-            window.toolbar.pack_start(nav_box);
-            window.toolbar.is_static = false;
-
             // Path bar wrapped in a Stack so we can swap it with an Entry (press "/")
             path_bar = new Box(Orientation.HORIZONTAL, 4);
             path_bar_stack = new Stack();
-            path_bar_stack.hexpand = true;
+            path_bar_stack.hhomogeneous = false;
+            path_bar_stack.vhomogeneous = false;
             path_bar_stack.transition_type = StackTransitionType.NONE;
             path_bar_stack.add_named(path_bar, "bar");
             path_entry_widget = new Entry();
@@ -476,7 +460,13 @@ namespace Singularity.Apps {
                 current_search = search_entry_widget.text;
                 if (current_folder != null) navigate_to.begin(current_folder);
             });
-            window.toolbar.set_title_widget(path_bar_stack);
+            // Fixed-width Box so the path bar clips on overflow.
+            var path_bubble = new Box(Orientation.HORIZONTAL, 0);
+            path_bubble.add_css_class("files-path-bubble");
+            path_bubble.hexpand = false;
+            path_bubble.overflow = Gtk.Overflow.HIDDEN;
+            path_bubble.append(path_bar_stack);
+            window.add_bubble_widget(path_bubble);
 
             path_bar_stack.notify["visible-child-name"].connect(() => {
                 bool input_active = path_bar_stack.visible_child_name != "bar";
@@ -539,7 +529,7 @@ namespace Singularity.Apps {
                 var select_btn = new Button.with_label(save_mode ? "Save" : "Open");
                 select_btn.add_css_class("suggested-action");
                 select_btn.clicked.connect(() => submit_picker_selection());
-                window.toolbar.pack_end(select_btn);
+                window.add_bubble_widget(select_btn);
             } else {
                 var search_btn = new Button.from_icon_name("system-search-symbolic");
                 search_btn.add_css_class("flat");
@@ -556,7 +546,7 @@ namespace Singularity.Apps {
                         if (current_folder != null) navigate_to.begin(current_folder);
                     }
                 });
-                window.toolbar.pack_end(search_btn);
+                window.add_bubble_widget(search_btn);
                 toolbar_search_btn = search_btn;
             }
 
@@ -568,7 +558,6 @@ namespace Singularity.Apps {
                 setup_file_view(content_scroll);
                 window.set_content(build_content_with_ops_banner(content_scroll));
                 var places_box = files_win.places_box;
-                places_box.prepend(new Singularity.Widgets.ToolbarSpacer.with_height(70));
                 add_place_button(places_box, "Recent", "recent://", "document-open-recent-symbolic");
                 places_box.append(new Separator(Orientation.HORIZONTAL));
                 add_place_button(places_box, "Home", Environment.get_home_dir(), "user-home-symbolic");
@@ -579,6 +568,7 @@ namespace Singularity.Apps {
                 add_place_button(places_box, "Videos", Environment.get_user_special_dir(UserDirectory.VIDEOS), "folder-videos-symbolic");
                 places_box.append(new Separator(Orientation.HORIZONTAL));
                 add_place_button(places_box, "Trash", "trash://", "user-trash-symbolic");
+                _watch_trash_state();
                 add_place_button(places_box, "Network", "smb://", "network-workgroup-symbolic");
 
                 // Dynamic bookmarks section
@@ -645,7 +635,6 @@ namespace Singularity.Apps {
                 if (stack_in_content != null) view_stack_ref = stack_in_content;
 
                 var picker_places = builder.get_object("picker_places") as Box;
-                picker_places.prepend(new Singularity.Widgets.ToolbarSpacer.with_height(70));
                 add_place_button(picker_places, "Home", Environment.get_home_dir(), "user-home-symbolic");
                 add_place_button(picker_places, "Documents", Environment.get_user_special_dir(UserDirectory.DOCUMENTS), "folder-documents-symbolic");
                 add_place_button(picker_places, "Downloads", Environment.get_user_special_dir(UserDirectory.DOWNLOAD), "folder-download-symbolic");
@@ -685,7 +674,7 @@ namespace Singularity.Apps {
                     view_btn.icon_name = (m == "grid") ? "view-grid-symbolic"
                         : (m == "column") ? "view-paged-symbolic" : "view-list-symbolic";
                 });
-                window.toolbar.pack_end(view_btn);
+                window.add_bubble_widget(view_btn);
 
                 // Empty Trash button - shown only when in trash://
                 var etb = new Button.from_icon_name("user-trash-full-symbolic");
@@ -707,7 +696,7 @@ namespace Singularity.Apps {
                         warning("Empty trash failed: %s", e.message);
                     }
                 });
-                window.toolbar.pack_end(etb);
+                window.add_bubble_widget(etb);
                 empty_trash_btn = etb;
 
                 view_stack_ref.notify["visible-child-name"].connect(() => {
@@ -716,13 +705,7 @@ namespace Singularity.Apps {
                         settings.set_string("view-mode", child);
                         if (child == "column" && current_folder != null) {
                             // Reset column browser completely on each switch-in
-                            if (_col_browser_box != null) {
-                                var c = _col_browser_box.get_first_child();
-                                while (c != null) { var nx = c.get_next_sibling(); _col_browser_box.remove(c); c = nx; }
-                            }
-                            _col_panes = {};
-                            _col_seps = {};
-                            _col_lists = {};
+                            if (_col_browser != null) _col_browser.clear();
                             _col_folders = {};
                             _col_count = 0;
                             load_column_pane(0, current_folder);
@@ -797,12 +780,18 @@ namespace Singularity.Apps {
 
         private void setup_file_view(ScrolledWindow container) {
             file_store = new GLib.ListStore(typeof(FileItem));
+            // Keep the bottom-corner count label in sync with the folder's item count.
+            file_store.items_changed.connect((pos, removed, added) => {
+                _update_file_count_label();
+            });
             // Always use MultiSelection so Ctrl+Click, Shift+Click and Ctrl+A work.
             // Picker mode (single-file) still works: the submit button reads whatever's selected.
             SelectionModel selection = new MultiSelection(file_store);
             var stack = new Stack();
             stack.transition_type = StackTransitionType.CROSSFADE;
-            file_view = new ColumnView(selection);
+            var list_widget = new Singularity.Widgets.DataListView();
+            file_view = list_widget.column_view;
+            list_widget.set_selection_model(selection);
             file_view.add_css_class("file-view");
             var factory_name = new SignalListItemFactory();
             factory_name.setup.connect((item) => {
@@ -951,24 +940,21 @@ namespace Singularity.Apps {
                 if (y < 36) show_column_menu(file_view, x, y);
             });
             file_view.add_controller(header_gesture);
-            file_view.activate.connect((pos) => {
+            list_widget.row_activated.connect((pos) => {
                 on_item_activated(pos);
             });
-            var list_scroll = new ScrolledWindow();
-            list_scroll.set_child(file_view);
-            // Background right-click: show folder-level context menu
-            var list_bg_gesture = new GestureClick();
-            list_bg_gesture.button = 3;
-            list_bg_gesture.pressed.connect((n, x, y) => {
-                show_background_context_menu(list_scroll, x, y);
+            list_widget.background_right_clicked.connect((x, y) => {
+                show_background_context_menu(list_widget.scroll, x, y);
             });
-            list_scroll.add_controller(list_bg_gesture);
-            stack.add_titled(list_scroll, "list", "List");
-            var grid_view = new GridView(selection, new SignalListItemFactory());
+            stack.add_titled(list_widget, "list", "List");
+            var grid_widget = new Singularity.Widgets.DataGridView();
+            var grid_view = grid_widget.grid_view;
             _grid_view = grid_view;
+            grid_view.factory = new SignalListItemFactory();
+            grid_widget.set_selection_model(selection);
             grid_view.add_css_class("file-grid");
-            grid_view.max_columns = 8;
-            grid_view.min_columns = 2;
+            grid_widget.max_columns = 8;
+            grid_widget.min_columns = 2;
             var grid_factory = (SignalListItemFactory)grid_view.factory;
             grid_factory.setup.connect((item) => {
                 var list_item = (ListItem)item;
@@ -1108,16 +1094,10 @@ namespace Singularity.Apps {
             key_controller_grid.set_propagation_phase(PropagationPhase.CAPTURE);
             key_controller_grid.key_pressed.connect(on_key_pressed);
             grid_view.add_controller(key_controller_grid);
-            var grid_scroll = new ScrolledWindow();
-            grid_scroll.set_child(grid_view);
-            // Background right-click on grid too
-            var grid_bg_gesture = new GestureClick();
-            grid_bg_gesture.button = 3;
-            grid_bg_gesture.pressed.connect((n, x, y) => {
-                show_background_context_menu(grid_scroll, x, y);
+            grid_widget.background_right_clicked.connect((x, y) => {
+                show_background_context_menu(grid_widget.scroll, x, y);
             });
-            grid_scroll.add_controller(grid_bg_gesture);
-            stack.add_titled(grid_scroll, "grid", "Grid");
+            stack.add_titled(grid_widget, "grid", "Grid");
             var status_page = new Singularity.Widgets.StatusPage();
             status_page.icon_name = "folder-open-symbolic";
             status_page.title = "Folder is Empty";
@@ -1130,30 +1110,13 @@ namespace Singularity.Apps {
             network_empty.description = "No Samba/SMB shares were discovered on the local network.\nUse \"New Connection\" at the top of this page to connect to a specific address.";
             stack.add_named(network_empty, "network-empty");
 
-            // Column browser pane - wrapped in a vertical box so toolbar spacer sits on top
-            var col_wrapper = new Box(Orientation.VERTICAL, 0);
-            col_wrapper.hexpand = true;
-            col_wrapper.vexpand = true;
-            col_wrapper.add_css_class("col-browser-wrapper");
-            col_wrapper.append(new Singularity.Widgets.ToolbarSpacer.with_height(70));
-            var col_scroll = new ScrolledWindow();
-            col_scroll.hscrollbar_policy = PolicyType.AUTOMATIC;
-            col_scroll.vscrollbar_policy = PolicyType.NEVER;
-            col_scroll.vexpand = true;
-            _col_browser_box = new Box(Orientation.HORIZONTAL, 0);
-            _col_browser_box.hexpand = true;
-            _col_browser_box.vexpand = true;
-            _col_browser_box.add_css_class("col-browser");
-            col_scroll.set_child(_col_browser_box);
-            _col_scroll = col_scroll;
-            col_wrapper.append(col_scroll);
-            stack.add_named(col_wrapper, "column");
+            _col_browser = new Singularity.Widgets.ColumnBrowser();
+            stack.add_named(_col_browser, "column");
 
             // Disks page - also wrapped with toolbar spacer
             var disks_wrapper = new Box(Orientation.VERTICAL, 0);
             disks_wrapper.hexpand = true;
             disks_wrapper.vexpand = true;
-            disks_wrapper.append(new Singularity.Widgets.ToolbarSpacer.with_height(70));
             var disks_scroll = new ScrolledWindow();
             disks_scroll.hscrollbar_policy = PolicyType.NEVER;
             disks_scroll.vscrollbar_policy = PolicyType.AUTOMATIC;
@@ -1180,6 +1143,16 @@ namespace Singularity.Apps {
             view_stack_ref = stack;
             string mode = settings.get_string("view-mode");
             stack.visible_child_name = mode;
+            // Starting in column view shows the "column" page with no panes loaded;
+            // defer the load until the folder is known.
+            if (mode == "column") {
+                GLib.Idle.add(() => {
+                    if (current_folder != null) {
+                        update_view_mode();
+                    }
+                    return GLib.Source.REMOVE;
+                });
+            }
         }
         [DBus (name = "dev.sinty.shell.Preview")]
         private interface PreviewService : Object {
@@ -1222,6 +1195,19 @@ namespace Singularity.Apps {
                 clipboard_is_cut = false;
                 clipboard_file = null;
                 if (current_folder != null) navigate_to.begin(current_folder);
+                return true;
+            }
+
+            // Ctrl+P opens the path-entry palette (same effect as "/").
+            if (ctrl && keyval == Gdk.Key.p) {
+                if (path_bar_stack != null && path_bar_stack.visible_child_name != "entry") {
+                    if (current_folder != null) {
+                        path_entry_widget.text = current_folder.get_path() ?? "";
+                    }
+                    path_bar_stack.visible_child_name = "entry";
+                    path_entry_widget.grab_focus();
+                    path_entry_widget.set_position(-1);
+                }
                 return true;
             }
 
@@ -1326,11 +1312,17 @@ namespace Singularity.Apps {
                 show_new_folder_dialog();
                 return true;
             }
-            // F2 - rename selected
+            // F2 renames the selected row. Column mode tracks selection per pane
+            // (separate from file_view's model), so check there first.
             if (!ctrl && keyval == Gdk.Key.F2) {
+                var col_fi = _column_selected_item();
+                if (col_fi != null) {
+                    start_inline_rename(col_fi);
+                    return true;
+                }
                 var selected = get_selected_items();
                 if (selected.length > 0) {
-                    show_rename_dialog(selected.get(0));
+                    start_inline_rename(selected.get(0));
                     return true;
                 }
             }
@@ -1383,7 +1375,7 @@ namespace Singularity.Apps {
 
             if (file_view != null && widget_contains(file_view, focus)) return true;
             if (_grid_view != null && widget_contains(_grid_view, focus)) return true;
-            if (_col_browser_box != null && widget_contains(_col_browser_box, focus)) return true;
+            if (_col_browser != null && widget_contains(_col_browser, focus)) return true;
 
             return false;
         }
@@ -1427,7 +1419,35 @@ namespace Singularity.Apps {
             var outer = new Gtk.Box(Orientation.VERTICAL, 0);
             content.hexpand = true;
             content.vexpand = true;
-            outer.append(content);
+
+            // The file-count label snaps to the opposite corner on hover
+            // so the pointer never covers it.
+            var count_overlay = new Gtk.Overlay();
+            count_overlay.set_child(content);
+            _file_count_lbl = new Gtk.Label("");
+            _file_count_lbl.add_css_class("dim-label");
+            _file_count_lbl.add_css_class("caption");
+            _file_count_lbl.add_css_class("files-count-overlay");
+            _file_count_lbl.halign = Align.END;
+            _file_count_lbl.valign = Align.END;
+            _file_count_lbl.margin_start = 12;
+            _file_count_lbl.margin_end   = 12;
+            _file_count_lbl.margin_bottom = 8;
+            _file_count_lbl.can_target = false;
+            count_overlay.add_overlay(_file_count_lbl);
+
+            var motion = new Gtk.EventControllerMotion();
+            motion.motion.connect((x, y) => {
+                int w = count_overlay.get_width();
+                int h = count_overlay.get_height();
+                // Bottom-right rectangle the label occupies; when the cursor
+                // enters it the label hops left.
+                bool in_br = (x > w - 220 && y > h - 56);
+                _file_count_lbl.halign = in_br ? Align.START : Align.END;
+            });
+            count_overlay.add_controller(motion);
+
+            outer.append(count_overlay);
 
             _ops_banner = new Gtk.Revealer();
             _ops_banner.transition_type = Gtk.RevealerTransitionType.SLIDE_UP;
@@ -1838,7 +1858,7 @@ namespace Singularity.Apps {
                     compress_selected_files(widget);
                 });
                 menu.add_item("Rename", "document-edit-symbolic", () => {
-                    show_rename_dialog(item);
+                    start_inline_rename(item);
                 });
                 menu.add_separator();
                 menu.add_item("Copy", "edit-copy-symbolic", () => {
@@ -1959,6 +1979,167 @@ namespace Singularity.Apps {
             }
             popover.set_child(box);
             popover.popup();
+        }
+
+        // ── Inline rename ──────────────────────────────────────────────────
+        //
+        // Swaps the row's name Label for an Entry in any view mode. Enter
+        // commits, Escape cancels, focus-leave commits. If the row isn't in
+        // the visible tree (scrolled off-screen, widget recycled), falls back
+        // to the modal dialog.
+
+        private FileItem? _rename_target  = null;
+        private Entry?    _rename_entry   = null;
+        private Label?    _rename_label   = null;
+        private Box?      _rename_row_box = null;
+
+        private void start_inline_rename(FileItem fi) {
+            if (_rename_target != null) commit_inline_rename();
+
+            string mode = settings.get_string("view-mode");
+            Widget? root = null;
+            if      (mode == "list")   root = (Widget) file_view;
+            else if (mode == "grid")   root = (Widget) _grid_view;
+            else if (mode == "column") root = (Widget) _col_browser;
+            if (root == null) { show_rename_dialog(fi); return; }
+
+            var holder = _find_widget_with_file_item(root, fi);
+            if (holder == null) { show_rename_dialog(fi); return; }
+            var label = _find_descendant_label(holder);
+            if (label == null) { show_rename_dialog(fi); return; }
+            var row_box = label.get_parent() as Box;
+            if (row_box == null) { show_rename_dialog(fi); return; }
+
+            var entry = new Entry();
+            entry.text = fi.name;
+            entry.hexpand = true;
+            entry.add_css_class("inline-rename");
+
+            Widget? prev = label.get_prev_sibling();
+            row_box.remove(label);
+            if (prev != null) row_box.insert_child_after(entry, prev);
+            else              row_box.prepend(entry);
+
+            _rename_target  = fi;
+            _rename_entry   = entry;
+            _rename_label   = label;
+            _rename_row_box = row_box;
+
+            // Pre-select the stem only for files with an extension;
+            // folders have no dot/extension contract.
+            int dot = fi.name.last_index_of_char('.');
+            if (dot > 0 && !fi.is_folder) entry.select_region(0, dot);
+            else                          entry.select_region(0, -1);
+            Idle.add(() => { entry.grab_focus(); return false; });
+
+            var key = new EventControllerKey();
+            key.set_propagation_phase(PropagationPhase.CAPTURE);
+            key.key_pressed.connect((kv, kc, mstate) => {
+                if (kv == Gdk.Key.Return || kv == Gdk.Key.KP_Enter) {
+                    commit_inline_rename();
+                    return true;
+                }
+                if (kv == Gdk.Key.Escape) {
+                    cancel_inline_rename();
+                    return true;
+                }
+                return false;
+            });
+            entry.add_controller(key);
+
+            var focus = new EventControllerFocus();
+            focus.leave.connect(() => {
+                if (_rename_entry == entry) commit_inline_rename();
+            });
+            entry.add_controller(focus);
+        }
+
+        private void commit_inline_rename() {
+            var entry = _rename_entry;
+            var fi    = _rename_target;
+            if (entry == null || fi == null) return;
+            string new_name = entry.text.strip();
+            _restore_inline_label();
+            if (new_name != "" && new_name != fi.name) {
+                try {
+                    fi.file.set_display_name(new_name, null);
+                    if (current_folder != null) navigate_to.begin(current_folder);
+                } catch (Error e) {
+                    warning("Inline rename failed: %s", e.message);
+                }
+            }
+        }
+
+        private void cancel_inline_rename() {
+            _restore_inline_label();
+        }
+
+        private void _restore_inline_label() {
+            if (_rename_entry != null && _rename_label != null && _rename_row_box != null) {
+                Widget? prev = _rename_entry.get_prev_sibling();
+                _rename_row_box.remove(_rename_entry);
+                if (prev != null) _rename_row_box.insert_child_after(_rename_label, prev);
+                else              _rename_row_box.prepend(_rename_label);
+            }
+            _rename_entry   = null;
+            _rename_label   = null;
+            _rename_row_box = null;
+            _rename_target  = null;
+        }
+
+        // Walk column panes from the rightmost backwards looking for a
+        // selected row, return its FileItem. Returns null in non-column
+        // mode or when nothing is selected.
+        private FileItem? _column_selected_item() {
+            if (_col_browser == null) return null;
+            string mode = settings.get_string("view-mode");
+            if (mode != "column") return null;
+            for (int i = _col_browser.pane_count - 1; i >= 0; i--) {
+                var pane = _col_browser.get_pane(i);
+                if (pane == null) continue;
+                var sel = pane.list_box.get_selected_row();
+                if (sel != null) {
+                    var fi = sel.get_data<FileItem>("col-file-item");
+                    if (fi != null) return fi;
+                }
+            }
+            return null;
+        }
+
+        private void _update_file_count_label() {
+            if (_file_count_lbl == null || file_store == null) return;
+            uint n = file_store.get_n_items();
+            _file_count_lbl.label = (n == 1)
+                ? "1 item"
+                : "%u items".printf(n);
+        }
+
+        private Widget? _find_widget_with_file_item(Widget w, FileItem target) {
+            // Column and list/grid build separate FileItem instances for the
+            // same file, so compare by URI to match a target across views.
+            string target_uri = target.file.get_uri();
+            var a = w.get_data<FileItem>("file-item");
+            if (a != null && a.file.get_uri() == target_uri) return w;
+            var b = w.get_data<FileItem>("col-file-item");
+            if (b != null && b.file.get_uri() == target_uri) return w;
+            Widget? c = w.get_first_child();
+            while (c != null) {
+                var found = _find_widget_with_file_item(c, target);
+                if (found != null) return found;
+                c = c.get_next_sibling();
+            }
+            return null;
+        }
+
+        private Label? _find_descendant_label(Widget w) {
+            if (w is Label) return (Label) w;
+            Widget? c = w.get_first_child();
+            while (c != null) {
+                var l = _find_descendant_label(c);
+                if (l != null) return l;
+                c = c.get_next_sibling();
+            }
+            return null;
         }
 
         private void show_rename_dialog(FileItem item) {
@@ -2386,15 +2567,7 @@ namespace Singularity.Apps {
 
         private void add_place_button(Box box, string name, string? path, string icon) {
             if (path == null) return;
-            var btn = new Button();
-            btn.halign = Align.FILL;
-            btn.has_frame = false;
-            var row = new Box(Orientation.HORIZONTAL, 12);
-            var img = new Image.from_icon_name(icon);
-            img.pixel_size = 16;
-            row.append(img);
-            row.append(new Label(name));
-            btn.set_child(row);
+            var btn = new Singularity.Widgets.SidebarRow(icon, name);
             // Normalize key: use uri string for uri paths, absolute path for local dirs
             string key = path.contains("://") ? path : File.new_for_path(path).get_uri();
             _place_buttons[key] = btn;
@@ -2467,44 +2640,68 @@ namespace Singularity.Apps {
                 path_bar.remove(child);
                 child = next;
             }
-            // Special virtual filesystems
             string furi = folder.get_uri();
             if (furi.has_prefix("trash://")) {
-                var lbl = new Label("Trash");
-                lbl.add_css_class("title");
-                path_bar.append(lbl);
+                _append_path_root("user-trash-symbolic", "Trash", () => {
+                    navigate_to_uri("trash://");
+                });
+                return;
+            }
+            if (furi.has_prefix("smb://")) {
+                _append_path_root("network-workgroup-symbolic", "Network", () => {
+                    navigate_to_uri("smb://");
+                });
                 return;
             }
             var path = folder.get_path();
             if (path == null) {
-                var label = new Label(furi);
-                label.add_css_class("title");
-                path_bar.append(label);
+                _append_path_root("folder-symbolic", furi, () => {});
                 return;
             }
             string home_dir = Environment.get_home_dir();
             bool in_home = (path == home_dir || path.has_prefix(home_dir + "/"));
 
+            // Smart truncation against a fixed char budget: first collapse
+            // segments to `home/../tailN`, then ellipsize per-segment labels.
+            const int PATH_CHAR_BUDGET = 32;
+            const int SEG_MAX_CHARS    = 14;
+
             if (in_home) {
                 string rel = (path == home_dir) ? "" : path.substring(home_dir.length + 1);
                 string[] rel_segs = (rel == "") ? new string[]{} : rel.split("/");
-                // Compute display size
-                int total_chars = 0;
-                foreach (string s in rel_segs) total_chars += s.length + 1;
-                bool truncate = rel_segs.length > 5 || total_chars > 250;
-                // Home icon button
+
+                // At the home root, show the user's display name beside the icon.
                 string home_target = home_dir;
-                var home_btn = new Button();
+                var home_btn = new Button.from_icon_name("user-home-symbolic");
                 home_btn.add_css_class("flat");
-                home_btn.set_child(new Image.from_icon_name("user-home-symbolic"));
+                home_btn.add_css_class("path-button");
                 home_btn.clicked.connect(() => navigate_user(File.new_for_path(home_target)));
                 path_bar.append(home_btn);
-                if (rel_segs.length == 0) return;
-                int start_idx = 0;
+                if (rel_segs.length == 0) {
+                    string uname = Environment.get_real_name();
+                    if (uname == null || uname == "" || uname == "Unknown")
+                        uname = Environment.get_user_name();
+                    if (uname != null && uname != "") {
+                        var name_btn = new Button.with_label(uname);
+                        name_btn.add_css_class("flat");
+                        name_btn.add_css_class("path-button");
+                        var lbl = name_btn.get_child() as Label;
+                        if (lbl != null) {
+                            lbl.ellipsize       = Pango.EllipsizeMode.END;
+                            lbl.max_width_chars = 14;
+                        }
+                        name_btn.clicked.connect(() => navigate_user(File.new_for_path(home_target)));
+                        path_bar.append(name_btn);
+                    }
+                    return;
+                }
+
+                int total_chars = 0;
+                foreach (string s in rel_segs) total_chars += s.length + 1;
+                bool truncate = rel_segs.length > 3 || total_chars > PATH_CHAR_BUDGET;
+                int tail_n = 2;
+                int start_idx = truncate ? int.max(0, rel_segs.length - tail_n) : 0;
                 if (truncate) {
-                    // Show HOME / .. / last 3
-                    start_idx = (int)rel_segs.length - 3;
-                    if (start_idx < 0) start_idx = 0;
                     path_bar.append(new Label("/"));
                     var ellipsis = new Label("..");
                     ellipsis.add_css_class("dim-label");
@@ -2518,11 +2715,16 @@ namespace Singularity.Apps {
                     var btn = new Button.with_label(rel_segs[i]);
                     btn.add_css_class("flat");
                     btn.add_css_class("path-button");
+                    var lbl = btn.get_child() as Label;
+                    if (lbl != null) {
+                        lbl.ellipsize       = Pango.EllipsizeMode.END;
+                        lbl.max_width_chars = SEG_MAX_CHARS;
+                    }
                     btn.clicked.connect(() => navigate_user(File.new_for_path(target)));
                     path_bar.append(btn);
                 }
             } else {
-                // Outside home: show / + segments with optional truncation
+                // Outside home: show / + segments with the same truncation rule.
                 var all_parts = new GLib.Array<string>();
                 var all_paths = new GLib.Array<string>();
                 string cp = "";
@@ -2534,16 +2736,18 @@ namespace Singularity.Apps {
                 }
                 int total_chars = 0;
                 for (int i = 0; i < (int)all_parts.length; i++) total_chars += all_parts.index(i).length + 1;
-                bool truncate = all_parts.length > 5 || total_chars > 250;
+                bool truncate = all_parts.length > 3 || total_chars > PATH_CHAR_BUDGET;
+
                 string root_target = "/";
                 var root_btn = new Button.with_label("/");
                 root_btn.add_css_class("flat");
+                root_btn.add_css_class("path-button");
                 root_btn.clicked.connect(() => navigate_user(File.new_for_path(root_target)));
                 path_bar.append(root_btn);
-                int start_idx = 0;
+
+                int tail_n = 2;
+                int start_idx = truncate ? int.max(0, (int)all_parts.length - tail_n) : 0;
                 if (truncate) {
-                    start_idx = (int)all_parts.length - 3;
-                    if (start_idx < 0) start_idx = 0;
                     path_bar.append(new Label("/"));
                     var ellipsis = new Label("..");
                     ellipsis.add_css_class("dim-label");
@@ -2555,6 +2759,11 @@ namespace Singularity.Apps {
                     var btn = new Button.with_label(all_parts.index(i));
                     btn.add_css_class("flat");
                     btn.add_css_class("path-button");
+                    var lbl = btn.get_child() as Label;
+                    if (lbl != null) {
+                        lbl.ellipsize       = Pango.EllipsizeMode.END;
+                        lbl.max_width_chars = SEG_MAX_CHARS;
+                    }
                     btn.clicked.connect(() => navigate_user(File.new_for_path(target)));
                     path_bar.append(btn);
                 }
@@ -2626,9 +2835,7 @@ namespace Singularity.Apps {
             string mode = settings.get_string("view-mode");
             if (mode == "column") {
                 view_stack_ref.visible_child_name = "column";
-                _col_panes = {};
-                _col_seps = {};
-                _col_lists = {};
+                if (_col_browser != null) _col_browser.clear();
                 _col_folders = {};
                 _col_count = 0;
                 load_column_pane(0, folder);
@@ -2657,9 +2864,9 @@ namespace Singularity.Apps {
                             path_bar.remove(child);
                             child = next;
                         }
-                        var recent_label = new Label("Recent");
-                        recent_label.add_css_class("title");
-                        path_bar.append(recent_label);
+                        _append_path_root("document-open-recent-symbolic", "Recent", () => {
+                            navigate_to_uri("recent://");
+                        });
                         current_folder = null;
                         if (empty_trash_btn != null) empty_trash_btn.visible = false;
                         // Highlight "Recent" in the sidebar
@@ -2688,9 +2895,9 @@ namespace Singularity.Apps {
                     path_bar.remove(child);
                     child = next;
                 }
-                var net_label = new Label("Network");
-                net_label.add_css_class("title");
-                path_bar.append(net_label);
+                _append_path_root("network-workgroup-symbolic", "Network", () => {
+                    navigate_to_uri("smb://");
+                });
                 current_folder = File.new_for_uri(uri);
                 if (empty_trash_btn != null) empty_trash_btn.visible = false;
                 sync_sidebar_active(current_folder);
@@ -2843,6 +3050,18 @@ namespace Singularity.Apps {
                     settings.set_string("last-folder", uri);
                 update_path_bar(folder);
                 sync_sidebar_active(folder);
+
+                // Navigation reaching here is always external (sidebar,
+                // back/forward, breadcrumb, search, initial load); internal
+                // column-row activations call load_column_pane directly. Reset
+                // the strip so panes from the previous folder don't linger.
+                if (view_stack_ref != null
+                    && view_stack_ref.visible_child_name == "column") {
+                    if (_col_browser != null) _col_browser.clear();
+                    _col_folders = {};
+                    _col_count = 0;
+                    load_column_pane(0, folder);
+                }
                 bool show_hidden = settings.get_boolean("show-hidden");
 
                 var items = new GenericArray<FileItem>();
@@ -2987,8 +3206,70 @@ namespace Singularity.Apps {
             }
         }
 
+        private void _append_path_root(string icon_name, string label, owned PathRootAction action) {
+            var btn = new Button.from_icon_name(icon_name);
+            btn.add_css_class("flat");
+            btn.add_css_class("path-button");
+            btn.clicked.connect(() => action());
+            path_bar.append(btn);
+            var lbl_btn = new Button.with_label(label);
+            lbl_btn.add_css_class("flat");
+            lbl_btn.add_css_class("path-button");
+            var inner = lbl_btn.get_child() as Label;
+            if (inner != null) {
+                inner.ellipsize = Pango.EllipsizeMode.END;
+                inner.max_width_chars = 14;
+            }
+            lbl_btn.clicked.connect(() => action());
+            path_bar.append(lbl_btn);
+        }
+
+        public delegate void PathRootAction();
+
+        // ── Trash sidebar live icon (empty / full) ─────────────────
+        private GLib.FileMonitor? _trash_monitor = null;
+
+        private void _watch_trash_state() {
+            // Monitor Trash so the icon flips when items are added/removed.
+            _refresh_trash_icon();
+            try {
+                var trash = GLib.File.new_for_uri("trash://");
+                _trash_monitor = trash.monitor_directory(
+                    GLib.FileMonitorFlags.NONE, null);
+                _trash_monitor.changed.connect((f, of, ev) => {
+                    _refresh_trash_icon();
+                });
+            } catch (Error e) {
+                warning("Trash monitor failed: %s", e.message);
+            }
+        }
+
+        private void _refresh_trash_icon() {
+            var btn = _place_buttons["trash:///"] ?? _place_buttons["trash://"];
+            var row = btn as Singularity.Widgets.SidebarRow;
+            if (row == null) return;
+            bool full = false;
+            try {
+                var trash = GLib.File.new_for_uri("trash://");
+                var en = trash.enumerate_children(
+                    "standard::name", GLib.FileQueryInfoFlags.NONE, null);
+                if (en.next_file(null) != null) full = true;
+            } catch (Error e) {
+                full = false;
+            }
+            row.update_icon_name(full ? "user-trash-full-symbolic"
+                                      : "user-trash-symbolic");
+        }
+
         private void show_disks_page() {
             if (_disks_page_box == null || view_stack_ref == null) return;
+            Widget child = path_bar.get_first_child();
+            while (child != null) {
+                var n = child.get_next_sibling();
+                path_bar.remove(child);
+                child = n;
+            }
+            _append_path_root("drive-harddisk-symbolic", "Disks", () => show_disks_page());
 
             // Clear previous cards
             var fc = _disks_page_box.get_first_child();
@@ -3111,74 +3392,26 @@ namespace Singularity.Apps {
         // Column browser (Miller columns)
 
         private void rebuild_visible_panes() {
-            if (_col_browser_box == null) return;
-            // Remove all current children
-            var child = _col_browser_box.get_first_child();
-            while (child != null) {
-                var next = child.get_next_sibling();
-                _col_browser_box.remove(child);
-                child = next;
-            }
-            // Re-append the visible slice (no leading separator for the leftmost visible pane)
-            int end = int.min(_col_viewport_start + MAX_COL_VISIBLE, _col_count);
-            for (int i = _col_viewport_start; i < end; i++) {
-                // Show separator only between panes (not before the leftmost visible one)
-                if (i > _col_viewport_start && i < _col_seps.length && _col_seps[i] != null)
-                    _col_browser_box.append(_col_seps[i]);
-                if (i < _col_panes.length && _col_panes[i] != null)
-                    _col_browser_box.append(_col_panes[i]);
-            }
-            // Scroll to show the rightmost pane
-            if (_col_scroll != null) {
-                Idle.add(() => {
-                    var adj = _col_scroll.get_hadjustment();
-                    if (adj != null)
-                        adj.set_value(adj.get_upper() - adj.get_page_size());
-                    return false;
-                });
-            }
+            if (_col_browser == null) return;
+            _col_browser.set_viewport(_col_viewport_start, MAX_COL_VISIBLE);
+            // Scroll to show the rightmost pane.
+            Idle.add(() => {
+                var adj = _col_browser.hadjustment;
+                if (adj != null)
+                    adj.set_value(adj.get_upper() - adj.get_page_size());
+                return false;
+            });
         }
 
         private void load_column_pane(int idx, File folder) {
-            if (_col_browser_box == null) return;
+            if (_col_browser == null) return;
 
-            // Truncate arrays to idx (widgets stay alive via Vala refs in arrays)
-            _col_count = idx;
-            if (_col_panes.length > idx) _col_panes.resize(idx);
-            if (_col_seps.length > idx + 1) _col_seps.resize(idx + 1);
-            if (_col_lists.length > idx) _col_lists.resize(idx);
+            // Drop every pane after the requested index.
+            _col_browser.pop_to(idx - 1);
             if (_col_folders.length > idx) _col_folders.resize(idx);
+            _col_count = idx;
 
-            // Build separator (stored but may not be shown if it becomes the leftmost visible)
-            Separator? new_sep = null;
-            if (idx > 0) {
-                new_sep = new Separator(Orientation.VERTICAL);
-                new_sep.add_css_class("col-browser-sep");
-            }
-
-            // Build new pane
-            var pane = new Box(Orientation.VERTICAL, 0);
-            pane.add_css_class("col-browser-pane");
-            pane.set_size_request(240, -1);
-            pane.hexpand = false;
-            pane.vexpand = true;
-
-            var pane_scroll = new ScrolledWindow();
-            pane_scroll.hscrollbar_policy = PolicyType.NEVER;
-            pane_scroll.vscrollbar_policy = PolicyType.AUTOMATIC;
-            pane_scroll.hexpand = false;
-            pane_scroll.vexpand = true;
-
-            var list_box = new ListBox();
-            list_box.add_css_class("col-browser-list");
-            list_box.selection_mode = SelectionMode.SINGLE;
-            pane_scroll.set_child(list_box);
-            pane.append(pane_scroll);
-
-            // Store refs
-            _col_panes += pane;
-            _col_seps += (new_sep != null ? new_sep : null);
-            _col_lists += list_box;
+            var pane = _col_browser.push_pane();
             _col_folders += folder;
             _col_count = idx + 1;
 
@@ -3186,7 +3419,7 @@ namespace Singularity.Apps {
             _col_viewport_start = int.max(0, _col_count - MAX_COL_VISIBLE);
             rebuild_visible_panes();
 
-            fill_column_pane.begin(idx, folder, list_box);
+            fill_column_pane.begin(idx, folder, pane.list_box);
         }
 
         private async void fill_column_pane(int idx, File folder, ListBox list_box) {
@@ -3245,20 +3478,10 @@ namespace Singularity.Apps {
                     return a.name.collate(b.name);
                 });
 
-                // Empty-state placeholder for the column pane.
+                // set_empty handles the placeholder swap internally.
                 if (items.length == 0) {
-                    var empty_row = new ListBoxRow();
-                    empty_row.selectable = false;
-                    empty_row.activatable = false;
-                    empty_row.add_css_class("col-browser-empty");
-                    var ep = new Singularity.Widgets.StatusPage();
-                    ep.icon_name = "folder-symbolic";
-                    ep.title = "Empty";
-                    ep.description = "";
-                    ep.margin_top = 24;
-                    ep.margin_bottom = 24;
-                    empty_row.set_child(ep);
-                    list_box.append(empty_row);
+                    var pane = _col_browser != null ? _col_browser.get_pane(idx) : null;
+                    if (pane != null) pane.set_empty("folder-symbolic", "Empty", "");
                     return;
                 }
 
@@ -3299,6 +3522,15 @@ namespace Singularity.Apps {
 
                     row.set_child(row_box);
                     row.set_data<FileItem>("col-file-item", item);
+
+                    var captured_item = item;
+                    var ctx_gesture = new GestureClick();
+                    ctx_gesture.button = 3;
+                    ctx_gesture.pressed.connect((n, gx, gy) => {
+                        show_context_menu(row, captured_item, gx, gy);
+                    });
+                    row.add_controller(ctx_gesture);
+
                     list_box.append(row);
                 }
 
