@@ -26,5 +26,5 @@ ninja -C build
 
 ## License
 
-By contributing you agree your code will be released under [LGPL-2.1-only](LICENSE).
+By contributing you agree your code will be released under [GPL-3.0-only](LICENSE).
 
