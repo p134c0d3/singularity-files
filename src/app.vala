@@ -106,7 +106,7 @@ namespace Singularity.Apps {
             if (view_stack_ref.get_child_by_name("empty") != null) return;
             _empty_page = new Singularity.Widgets.StatusPage();
             _empty_page.icon_name = "folder-symbolic";
-            _empty_page.title = "This folder is empty";
+            _empty_page.title = _("This folder is empty");
             _empty_page.description = "Drop files here or use the menu to add new items.";
             view_stack_ref.add_named(_empty_page, "empty");
         }
@@ -124,19 +124,19 @@ namespace Singularity.Apps {
                 string uri = current_folder.get_uri();
                 if (uri.has_prefix("trash://")) {
                     _empty_page.icon_name = "user-trash-symbolic";
-                    _empty_page.title = "Trash is empty";
+                    _empty_page.title = _("Trash is empty");
                     _empty_page.description = "Deleted files appear here. They are not actually removed until you empty the Trash.";
                 } else if (uri.has_prefix("recent://")) {
                     _empty_page.icon_name = "document-open-recent-symbolic";
-                    _empty_page.title = "No recent files";
+                    _empty_page.title = _("No recent files");
                     _empty_page.description = "Files you open will appear here for quick access.";
                 } else if (current_search != "") {
                     _empty_page.icon_name = "system-search-symbolic";
-                    _empty_page.title = "No matches";
+                    _empty_page.title = _("No matches");
                     _empty_page.description = "Try a different search term, or clear the filter with Escape.";
                 } else {
                     _empty_page.icon_name = "folder-symbolic";
-                    _empty_page.title = "This folder is empty";
+                    _empty_page.title = _("This folder is empty");
                     _empty_page.description = "Drop files here, paste with Ctrl+V or use the menu to add new items.";
                 }
                 view_stack_ref.visible_child_name = "empty";
@@ -361,7 +361,7 @@ namespace Singularity.Apps {
                 back_btn = new Button.from_icon_name("go-previous-symbolic");
                 back_btn.add_css_class("flat");
                 back_btn.visible = false;
-                back_btn.tooltip_text = "Back";
+                back_btn.tooltip_text = _("Back");
                 back_btn.clicked.connect(() => {
                     if (nav_index > 0) {
                         nav_index--;
@@ -373,7 +373,7 @@ namespace Singularity.Apps {
                 fwd_btn = new Button.from_icon_name("go-next-symbolic");
                 fwd_btn.add_css_class("flat");
                 fwd_btn.visible = false;
-                fwd_btn.tooltip_text = "Forward";
+                fwd_btn.tooltip_text = _("Forward");
                 fwd_btn.clicked.connect(() => {
                     if (nav_index < (int)nav_history.length - 1) {
                         nav_index++;
@@ -403,7 +403,7 @@ namespace Singularity.Apps {
             path_bar_stack.visible_child_name = "bar";
             // Search entry
             search_entry_widget = new Entry();
-            search_entry_widget.placeholder_text = "Search…";
+            search_entry_widget.placeholder_text = _("Search…");
             search_entry_widget.width_chars = 30;
             search_entry_widget.hexpand = true;
             search_entry_widget.set_icon_from_icon_name(EntryIconPosition.PRIMARY, "system-search-symbolic");
@@ -526,14 +526,14 @@ namespace Singularity.Apps {
             path_entry_widget.changed.connect(update_path_completions);
 
             if (picker_mode) {
-                var select_btn = new Button.with_label(save_mode ? "Save" : "Open");
+                var select_btn = new Button.with_label(save_mode ? _("Save") : _("Open"));
                 select_btn.add_css_class("suggested-action");
                 select_btn.clicked.connect(() => submit_picker_selection());
                 window.add_bubble_widget(select_btn);
             } else {
                 var search_btn = new Button.from_icon_name("system-search-symbolic");
                 search_btn.add_css_class("flat");
-                search_btn.tooltip_text = "Search";
+                search_btn.tooltip_text = _("Search");
                 search_btn.clicked.connect(() => {
                     if (path_bar_stack.visible_child_name != "search") {
                         current_search = "";
@@ -660,7 +660,7 @@ namespace Singularity.Apps {
                 var view_btn = new Button();
                 view_btn.has_frame = false;
                 view_btn.add_css_class("toolbar-button");
-                view_btn.tooltip_text = "Toggle View (Ctrl+Shift+V)";
+                view_btn.tooltip_text = _("Toggle View (Ctrl+Shift+V)");
                 // Icon reflects CURRENT mode
                 view_btn.icon_name = (mode == "grid") ? "view-grid-symbolic"
                     : (mode == "column") ? "view-paged-symbolic" : "view-list-symbolic";
@@ -680,7 +680,7 @@ namespace Singularity.Apps {
                 var etb = new Button.from_icon_name("user-trash-full-symbolic");
                 etb.has_frame = false;
                 etb.add_css_class("toolbar-button");
-                etb.tooltip_text = "Empty Trash";
+                etb.tooltip_text = _("Empty Trash");
                 etb.visible = false;
                 etb.clicked.connect(() => {
                     try {
@@ -740,11 +740,11 @@ namespace Singularity.Apps {
                 filename_box.margin_end = 12;
                 filename_box.margin_top = 4;
                 filename_box.margin_bottom = 8;
-                var fn_label = new Label("Name:");
+                var fn_label = new Label(_("Name:"));
                 fn_label.xalign = 0;
                 filename_entry = new Entry();
                 filename_entry.hexpand = true;
-                filename_entry.placeholder_text = "Enter file name";
+                filename_entry.placeholder_text = _("Enter file name");
                 if (picker_current_name != null) filename_entry.text = picker_current_name;
                 filename_entry.activate.connect(() => submit_picker_selection());
                 filename_box.append(fn_label);
@@ -894,7 +894,7 @@ namespace Singularity.Apps {
                 var label = (Label)list_item.get_child();
                 var file_item = (FileItem)list_item.get_item();
                 if (file_item.info.get_file_type() == FileType.DIRECTORY) {
-                    label.label = "Folder";
+                    label.label = _("Folder");
                 } else {
                     string? ctype = file_item.info.get_content_type();
                     label.label = ctype != null ? GLib.ContentType.get_description(ctype) : "";
@@ -921,11 +921,11 @@ namespace Singularity.Apps {
                     var now = new GLib.DateTime.now_local();
                     var diff = now.difference(mtime) / GLib.TimeSpan.DAY;
                     if (diff == 0)
-                        label.label = mtime.format("%H:%M");
+                        label.label = mtime.format(_("%H:%M"));
                     else if (diff < 365)
-                        label.label = mtime.format("%b %d");
+                        label.label = mtime.format(_("%b %d"));
                     else
-                        label.label = mtime.format("%Y-%m-%d");
+                        label.label = mtime.format(_("%Y-%m-%d"));
                 } else {
                     label.label = "";
                 }
@@ -1100,13 +1100,13 @@ namespace Singularity.Apps {
             stack.add_titled(grid_widget, "grid", "Grid");
             var status_page = new Singularity.Widgets.StatusPage();
             status_page.icon_name = "folder-open-symbolic";
-            status_page.title = "Folder is Empty";
+            status_page.title = _("Folder is Empty");
             status_page.description = "There are no files in this folder.";
             stack.add_named(status_page, "empty");
 
             var network_empty = new Singularity.Widgets.StatusPage();
             network_empty.icon_name = "network-workgroup-symbolic";
-            network_empty.title = "No Network Shares Found";
+            network_empty.title = _("No Network Shares Found");
             network_empty.description = "No Samba/SMB shares were discovered on the local network.\nUse \"New Connection\" at the top of this page to connect to a specific address.";
             stack.add_named(network_empty, "network-empty");
 
@@ -1480,7 +1480,7 @@ namespace Singularity.Apps {
 
             _ops_cancel_btn = new Gtk.Button.from_icon_name("process-stop-symbolic");
             _ops_cancel_btn.add_css_class("flat");
-            _ops_cancel_btn.tooltip_text = "Cancel all operations";
+            _ops_cancel_btn.tooltip_text = _("Cancel all operations");
             _ops_cancel_btn.clicked.connect(() => {
                 if (_ops == null) return;
                 foreach (var op in _ops.ops) {
@@ -1552,7 +1552,7 @@ namespace Singularity.Apps {
         private void show_new_folder_dialog() {
             if (current_folder == null) return;
             var dialog = new Singularity.Widgets.AppDialog((Gtk.Application)this, false);
-            dialog.title = "New Folder";
+            dialog.title = _("New Folder");
             dialog.transient_for = (Gtk.Window)file_view.get_root();
             dialog.set_default_size(360, 160);
 
@@ -1563,17 +1563,17 @@ namespace Singularity.Apps {
             box.margin_end = 24;
 
             var entry = new Entry();
-            entry.placeholder_text = "Folder name";
+            entry.placeholder_text = _("Folder name");
             entry.text = "New Folder";
             entry.hexpand = true;
             box.append(entry);
 
             var btn_box = new Box(Orientation.HORIZONTAL, 8);
             btn_box.halign = Align.END;
-            var cancel_btn = new Button.with_label("Cancel");
+            var cancel_btn = new Button.with_label(_("Cancel"));
             cancel_btn.add_css_class("flat");
             cancel_btn.clicked.connect(() => dialog.close());
-            var ok_btn = new Button.with_label("Create");
+            var ok_btn = new Button.with_label(_("Create"));
             ok_btn.add_css_class("suggested-action");
             ok_btn.clicked.connect(() => {
                 string name = entry.text.strip();
@@ -1680,7 +1680,7 @@ namespace Singularity.Apps {
 
         private void extract_archive_to(Widget widget, FileItem item) {
             var dialog = new FileDialog();
-            dialog.title = "Extract To…";
+            dialog.title = _("Extract To…");
             dialog.select_folder.begin(active_window, null, (obj, res) => {
                 try {
                     var dest_file = dialog.select_folder.end(res);
@@ -1702,7 +1702,7 @@ namespace Singularity.Apps {
             string default_name = selected.length == 1 ? selected[0].name : "archive";
 
             var dialog = new Singularity.Widgets.AppDialog((Gtk.Application)this, false);
-            dialog.title = "Compress Files";
+            dialog.title = _("Compress Files");
             if (active_window != null) dialog.transient_for = active_window;
             dialog.set_default_size(380, 200);
 
@@ -1711,13 +1711,13 @@ namespace Singularity.Apps {
             box.margin_start = 20; box.margin_end = 20;
 
             var name_entry = new Entry();
-            name_entry.placeholder_text = "Archive name";
+            name_entry.placeholder_text = _("Archive name");
             name_entry.text = default_name;
             name_entry.hexpand = true;
             box.append(name_entry);
 
             var fmt_row = new Box(Orientation.HORIZONTAL, 8);
-            var fmt_lbl = new Label("Format:");
+            var fmt_lbl = new Label(_("Format:"));
             fmt_lbl.halign = Align.START;
             var fmt_combo = new DropDown.from_strings({ "tar.gz", "zip" });
             fmt_row.append(fmt_lbl);
@@ -1726,10 +1726,10 @@ namespace Singularity.Apps {
 
             var btn_row = new Box(Orientation.HORIZONTAL, 8);
             btn_row.halign = Align.END;
-            var cancel_btn = new Button.with_label("Cancel");
+            var cancel_btn = new Button.with_label(_("Cancel"));
             cancel_btn.add_css_class("flat");
             cancel_btn.clicked.connect(() => dialog.close());
-            var ok_btn = new Button.with_label("Compress");
+            var ok_btn = new Button.with_label(_("Compress"));
             ok_btn.add_css_class("suggested-action");
             ok_btn.clicked.connect(() => {
                 string aname = name_entry.text.strip();
@@ -1963,7 +1963,7 @@ namespace Singularity.Apps {
             box.margin_bottom = 6;
             box.margin_start = 8;
             box.margin_end = 8;
-            var lbl = new Label("Show columns");
+            var lbl = new Label(_("Show columns"));
             lbl.halign = Align.START;
             lbl.add_css_class("caption");
             lbl.margin_bottom = 4;
@@ -2144,7 +2144,7 @@ namespace Singularity.Apps {
 
         private void show_rename_dialog(FileItem item) {
             var dialog = new Singularity.Widgets.AppDialog((Gtk.Application)this, false);
-            dialog.title = "Rename";
+            dialog.title = _("Rename");
             dialog.transient_for = (Gtk.Window)file_view.get_root();
             dialog.set_default_size(360, 160);
 
@@ -2161,10 +2161,10 @@ namespace Singularity.Apps {
 
             var btn_box = new Box(Orientation.HORIZONTAL, 8);
             btn_box.halign = Align.END;
-            var cancel_btn = new Button.with_label("Cancel");
+            var cancel_btn = new Button.with_label(_("Cancel"));
             cancel_btn.add_css_class("flat");
             cancel_btn.clicked.connect(() => dialog.close());
-            var ok_btn = new Button.with_label("Rename");
+            var ok_btn = new Button.with_label(_("Rename"));
             ok_btn.add_css_class("suggested-action");
             ok_btn.clicked.connect(() => {
                 string new_name = entry.text.strip();
@@ -2469,7 +2469,7 @@ namespace Singularity.Apps {
             var disks_img = new Image.from_icon_name("drive-multidisk-symbolic");
             disks_img.pixel_size = 16;
             disks_row.append(disks_img);
-            disks_row.append(new Label("Disks"));
+            disks_row.append(new Label(_("Disks")));
             disks_btn.set_child(disks_row);
             disks_btn.clicked.connect(show_disks_page);
             _devices_section.append(disks_btn);
@@ -3289,7 +3289,7 @@ namespace Singularity.Apps {
                 path_bar.remove(pb_child);
                 pb_child = next2;
             }
-            var disks_lbl = new Label("Disks");
+            var disks_lbl = new Label(_("Disks"));
             disks_lbl.add_css_class("title");
             path_bar.append(disks_lbl);
 
@@ -3384,7 +3384,7 @@ namespace Singularity.Apps {
                         }
                         string free_str = GLib.format_size(free_b);
                         string total_str = GLib.format_size(total);
-                        size_lbl.label = "%s free of %s".printf(free_str, total_str);
+                        size_lbl.label = _("%s free of %s").printf(free_str, total_str);
                     } catch { }
                 });
         }
@@ -3638,7 +3638,7 @@ namespace Singularity.Apps {
                 size_str = format_size(info.get_size());
             }
             var dialog = new Singularity.Widgets.AppDialog((Gtk.Application)this, false);
-            dialog.title = "Properties";
+            dialog.title = _("Properties");
             dialog.transient_for = (Gtk.Window)file_view.get_root();
             dialog.set_default_size(400, 450);
             var box = new Box(Orientation.VERTICAL, 18);
@@ -3705,7 +3705,7 @@ namespace Singularity.Apps {
             var btn_box = new Box(Orientation.HORIZONTAL, 12);
             btn_box.halign = Align.END;
             btn_box.margin_top = 12;
-            var close_btn = new Button.with_label("Close");
+            var close_btn = new Button.with_label(_("Close"));
             close_btn.add_css_class("close-button");
             close_btn.clicked.connect(() => dialog.close());
             btn_box.append(close_btn);

@@ -23,7 +23,7 @@ namespace Singularity.Apps {
             box.margin_start = 24;
             box.margin_end = 24;
 
-            var title_lbl = new Gtk.Label("New Connection");
+            var title_lbl = new Gtk.Label(_("New Connection"));
             title_lbl.add_css_class("title-3");
             title_lbl.xalign = 0f;
             box.append(title_lbl);
@@ -42,10 +42,10 @@ namespace Singularity.Apps {
             var btn_row = new Gtk.Box(Gtk.Orientation.HORIZONTAL, 8);
             btn_row.halign = Gtk.Align.END;
 
-            var cancel_btn = new Gtk.Button.with_label("Cancel");
+            var cancel_btn = new Gtk.Button.with_label(_("Cancel"));
             cancel_btn.clicked.connect(() => { close(); });
 
-            var connect_btn = new Gtk.Button.with_label("Connect");
+            var connect_btn = new Gtk.Button.with_label(_("Connect"));
             connect_btn.add_css_class("suggested-action");
             connect_btn.clicked.connect(() => {
                 string uri = entry.get_text().strip();
