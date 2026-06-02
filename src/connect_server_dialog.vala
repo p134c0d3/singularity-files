@@ -37,6 +37,7 @@ namespace Singularity.Apps {
             var entry = new Gtk.Entry();
             entry.placeholder_text = "sftp://user@hostname";
             entry.hexpand = true;
+            Singularity.Widgets.ContextMenu.attach_editable(entry);
             box.append(entry);
 
             var btn_row = new Gtk.Box(Gtk.Orientation.HORIZONTAL, 8);
