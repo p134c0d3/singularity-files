@@ -1632,7 +1632,8 @@ namespace Singularity.Apps {
         }
 
         private void set_as_wallpaper(FileItem item) {
-            var desktop_settings = new GLib.Settings("dev.sinty.desktop");
+            var desktop_settings = Singularity.Core.safe_settings("dev.sinty.desktop");
+            if (desktop_settings == null) return;
             desktop_settings.set_string("background-picture-uri", item.file.get_uri());
         }
 
