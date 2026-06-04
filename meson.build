@@ -21,11 +21,15 @@ else
   libsingularity_dep = dependency('singularity-1.0')
 endif
 
+# Compile .vetro to .ui in the ui/ subdirectory
+subdir('ui')
+
 # Resources
 resources = gnome.compile_resources(
   'singularity-files-resources',
   'resources/dev.sinty.files.gresource.xml',
-  source_dir: meson.current_source_dir()
+  source_dir: [meson.current_source_dir(), meson.current_build_dir()],
+  dependencies: [main_ui, picker_ui]
 )
 
 sources = files(
