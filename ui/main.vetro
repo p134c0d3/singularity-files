@@ -2,6 +2,9 @@ Template(class: "SingularityAppsFilesWindow", parent: "SingularityWidgetsWindow"
     HBox(id: "files_ui_root", spacing: 0) {
         ScrolledWindow(id: "content_scroll")
 
-        AppSidebar(id: "sidebar_scroll")
+        ScrolledWindow(id: "sidebar_scroll") {
+            VBox(id: "places_box", spacing: 2)
+                .cssClass("navigation-sidebar")
+        }
     }
 }
