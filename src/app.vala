@@ -149,6 +149,16 @@ namespace Singularity.Apps {
             }
         }
 
+        private bool _global_menu_name_requested = false;
+
+        private void ensure_global_menu_name() {
+            if (_global_menu_name_requested) return;
+            var conn = get_dbus_connection();
+            if (conn == null) return;
+            _global_menu_name_requested = true;
+            Bus.own_name_on_connection(conn, application_id, BusNameOwnerFlags.NONE, null, null);
+        }
+
         private void setup_menu() {
             var menu = new GLib.Menu();
 
@@ -329,6 +339,7 @@ namespace Singularity.Apps {
         }
 
         protected override void activate() {
+            if (!picker_mode && !portal_mode) ensure_global_menu_name();
             string title = "Files";
             if (picker_mode) {
                 title = save_mode ? "Save File" : "Select File";
