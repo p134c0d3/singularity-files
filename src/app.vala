@@ -215,10 +215,13 @@ namespace Singularity.Apps {
             });
             add_action(act_settings);
 
-            var act_view = new SimpleAction.stateful("view-mode", GLib.VariantType.STRING, new GLib.Variant.string("grid"));
+            var act_view = new SimpleAction.stateful("view-mode", GLib.VariantType.STRING,
+                new GLib.Variant.string(settings.get_string("view-mode")));
             act_view.activate.connect((param) => {
                 settings.set_string("view-mode", param.get_string());
-                act_view.set_state(param);
+            });
+            settings.changed["view-mode"].connect(() => {
+                act_view.set_state(new GLib.Variant.string(settings.get_string("view-mode")));
             });
             add_action(act_view);
 
