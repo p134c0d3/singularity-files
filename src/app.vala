@@ -1217,6 +1217,18 @@ namespace Singularity.Apps {
         private bool on_key_pressed(uint keyval, uint keycode, Gdk.ModifierType state) {
             bool ctrl = (state & Gdk.ModifierType.CONTROL_MASK) != 0;
 
+            // When a text entry is focused (e.g. the save-mode filename field),
+            // let plain typing through instead of consuming it here. This
+            // capture-phase handler otherwise swallows Space and printable keys
+            // before the entry sees them.
+            if (!ctrl) {
+                var focusw = active_window != null ? active_window.get_focus() : null;
+                if (focusw is Gtk.Editable || focusw is Gtk.Text) {
+                    unichar uc = Gdk.keyval_to_unicode(keyval);
+                    if (keyval == Gdk.Key.space || uc > 0x20) return false;
+                }
+            }
+
             // Enter/Return in picker mode - submit selection
             if (picker_mode && !ctrl && (keyval == Gdk.Key.Return || keyval == Gdk.Key.KP_Enter)) {
                 submit_picker_selection();
