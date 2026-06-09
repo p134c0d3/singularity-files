@@ -874,6 +874,7 @@ namespace Singularity.Apps {
             });
             var col_name = new ColumnViewColumn("Name", factory_name);
             col_name.expand = true;
+            col_name.resizable = true;
             file_view.append_column(col_name);
             var factory_size = new SignalListItemFactory();
             factory_size.setup.connect((item) => {
@@ -893,6 +894,7 @@ namespace Singularity.Apps {
                 }
             });
             col_size = new ColumnViewColumn("Size", factory_size);
+            col_size.resizable = true;
             file_view.append_column(col_size);
             // Type column
             var factory_type = new SignalListItemFactory();
@@ -916,6 +918,7 @@ namespace Singularity.Apps {
             });
             col_type = new ColumnViewColumn("Type", factory_type);
             col_type.fixed_width = 140;
+            col_type.resizable = true;
             file_view.append_column(col_type);
             // Modified column
             var factory_modified = new SignalListItemFactory();
@@ -946,7 +949,44 @@ namespace Singularity.Apps {
             });
             col_modified = new ColumnViewColumn("Modified", factory_modified);
             col_modified.fixed_width = 90;
+            col_modified.resizable = true;
             file_view.append_column(col_modified);
+
+            // Sorters make the column headers clickable. The actual ordering is
+            // still applied by sort_files() (it keeps folders first and honours
+            // the saved sort settings), so here we just map the clicked column
+            // and direction onto the sort settings and re-sort.
+            col_name.set_sorter(new Gtk.CustomSorter((a, b) =>
+                ((FileItem) a).name.collate(((FileItem) b).name)));
+            col_size.set_sorter(new Gtk.CustomSorter((a, b) => {
+                int64 sa = ((FileItem) a).info.get_size();
+                int64 sb = ((FileItem) b).info.get_size();
+                return sa < sb ? -1 : (sa > sb ? 1 : 0);
+            }));
+            col_type.set_sorter(new Gtk.CustomSorter((a, b) =>
+                (((FileItem) a).info.get_content_type() ?? "").collate(
+                 ((FileItem) b).info.get_content_type() ?? "")));
+            col_modified.set_sorter(new Gtk.CustomSorter((a, b) => {
+                var da = ((FileItem) a).info.get_modification_date_time();
+                var db = ((FileItem) b).info.get_modification_date_time();
+                if (da == null || db == null) return 0;
+                return da.compare(db);
+            }));
+            var col_sorter = file_view.sorter as Gtk.ColumnViewSorter;
+            if (col_sorter != null) {
+                col_sorter.changed.connect(() => {
+                    var pcol = col_sorter.get_primary_sort_column();
+                    if (pcol == null) return;
+                    string method = "name";
+                    if (pcol == col_size) method = "size";
+                    else if (pcol == col_type) method = "type";
+                    else if (pcol == col_modified) method = "date";
+                    bool asc = col_sorter.get_primary_sort_order() == Gtk.SortType.ASCENDING;
+                    settings.set_string("sort-method", method);
+                    settings.set_string("sort-order", asc ? "ascending" : "descending");
+                    sort_files();
+                });
+            }
             // Right-click on column headers to toggle column visibility
             var header_gesture = new GestureClick();
             header_gesture.button = 3;
@@ -1675,22 +1715,52 @@ namespace Singularity.Apps {
             }
         }
 
+        // Build an extraction command for the given archive, picking a tool
+        // that is actually installed. bsdtar handles every format but is not
+        // always present (e.g. Fedora), so fall back to unzip for .zip and the
+        // GNU tar for tarballs.
+        private string[]? extract_command(string src, string dest_dir) {
+            string lower = src.down();
+            if (GLib.Environment.find_program_in_path("bsdtar") != null) {
+                return { "bsdtar", "-x", "-f", src, "-C", dest_dir };
+            }
+            if (lower.has_suffix(".zip") &&
+                GLib.Environment.find_program_in_path("unzip") != null) {
+                return { "unzip", "-o", src, "-d", dest_dir };
+            }
+            if (GLib.Environment.find_program_in_path("tar") != null) {
+                return { "tar", "-x", "-f", src, "-C", dest_dir };
+            }
+            return null;
+        }
+
+        private void run_extract(string src, string dest_dir, bool refresh) {
+            string[]? cmd = extract_command(src, dest_dir);
+            if (cmd == null) {
+                warning("Extract: no extraction tool (bsdtar/unzip/tar) found");
+                return;
+            }
+            try {
+                var proc = new GLib.Subprocess.newv(cmd, GLib.SubprocessFlags.STDERR_PIPE);
+                proc.wait_check_async.begin(null, (obj, res) => {
+                    try {
+                        proc.wait_check_async.end(res);
+                        if (refresh && current_folder != null)
+                            navigate_to.begin(current_folder);
+                    } catch (Error e) {
+                        warning("Extract failed for %s: %s", src, e.message);
+                    }
+                });
+            } catch (Error e) {
+                warning("Failed to start extraction: %s", e.message);
+            }
+        }
+
         private void extract_archive_here(FileItem item) {
             string? src = item.file.get_path();
             string? dest_dir = item.file.get_parent()?.get_path();
             if (src == null || dest_dir == null) return;
-            try {
-                string[] cmd = { "bsdtar", "xf", src, "-C", dest_dir };
-                var proc = new GLib.Subprocess.newv(cmd, GLib.SubprocessFlags.STDERR_PIPE);
-                proc.wait_async.begin(null, (obj, res) => {
-                    try {
-                        proc.wait_async.end(res);
-                        if (current_folder != null) navigate_to.begin(current_folder);
-                    } catch (Error e) { warning("Extract here error: %s", e.message); }
-                });
-            } catch (Error e) {
-                warning("Failed to extract archive: %s", e.message);
-            }
+            run_extract(src, dest_dir, true);
         }
 
         private void extract_archive_to(Widget widget, FileItem item) {
@@ -1702,11 +1772,7 @@ namespace Singularity.Apps {
                     string? src = item.file.get_path();
                     string? dest = dest_file.get_path();
                     if (src == null || dest == null) return;
-                    string[] cmd = { "bsdtar", "xf", src, "-C", dest };
-                    var proc = new GLib.Subprocess.newv(cmd, GLib.SubprocessFlags.STDERR_PIPE);
-                    proc.wait_async.begin(null, (obj2, res2) => {
-                        try { proc.wait_async.end(res2); } catch (Error e) { warning("%s", e.message); }
-                    });
+                    run_extract(src, dest, false);
                 } catch {}
             });
         }
@@ -1848,7 +1914,7 @@ namespace Singularity.Apps {
                         menu.add_item("Open as Folder", "folder-open-symbolic", () => {
                             open_archive_as_folder(item);
                         });
-                        menu.add_item("Extract Here", "extract-archive-symbolic", () => {
+                        menu.add_item("Extract Here", "package-x-generic-symbolic", () => {
                             extract_archive_here(item);
                         });
                         menu.add_item("Extract To…", "folder-download-symbolic", () => {
