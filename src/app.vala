@@ -6,6 +6,8 @@ using Singularity.FileSystem;
 
 namespace Singularity.Apps {
 
+    public delegate void StorageEntryFunc(string name, string icon, string? path, GLib.Volume? volume);
+
     public class FilesApp : Singularity.Application {
         private Files.FileOpsManager? _ops = null;
         private Gtk.Revealer? _ops_banner = null;
@@ -56,6 +58,7 @@ namespace Singularity.Apps {
         private Gtk.Label? _file_count_lbl = null;
         private Box? _bookmarks_section = null;
         private Box? _devices_section = null;
+        private Box? _picker_devices_section = null;
         private GLib.VolumeMonitor? _volume_monitor = null;
         private GLib.FileMonitor? _bookmarks_file_monitor = null;
         // Miller columns state
@@ -662,6 +665,14 @@ namespace Singularity.Apps {
                 picker_places.append(_bookmarks_section);
                 rebuild_bookmarks_section();
                 setup_bookmarks_file_monitor();
+                _picker_devices_section = new Box(Orientation.VERTICAL, 2);
+                picker_places.append(_picker_devices_section);
+                rebuild_picker_devices_section();
+                _volume_monitor = GLib.VolumeMonitor.get();
+                _volume_monitor.mount_added.connect((m) => { rebuild_picker_devices_section(); });
+                _volume_monitor.mount_removed.connect((m) => { rebuild_picker_devices_section(); });
+                _volume_monitor.volume_added.connect((v) => { rebuild_picker_devices_section(); });
+                _volume_monitor.volume_removed.connect((v) => { rebuild_picker_devices_section(); });
                 window.set_sidebar(picker_sidebar);
                 window.set_sidebar_visible(true);
             }
@@ -864,8 +875,10 @@ namespace Singularity.Apps {
                         load_thumbnail_async(img, null, fpath, 24);
                     }
                 } else {
-                    img.set_data<string>("thumb-for-path", "");
                     img.set_from_gicon(file_item.info.get_icon());
+                    if (!apply_plugin_icon(img, file_item, 24)) {
+                        img.set_data<string>("thumb-for-path", "");
+                    }
                 }
                 // Cut visual feedback
                 bool is_cut = clipboard_is_cut && clipboard_file != null &&
@@ -935,6 +948,7 @@ namespace Singularity.Apps {
                 var file_item = (FileItem)list_item.get_item();
                 var mtime = file_item.info.get_modification_date_time();
                 if (mtime != null) {
+                    mtime = mtime.to_local();
                     var now = new GLib.DateTime.now_local();
                     var diff = now.difference(mtime) / GLib.TimeSpan.DAY;
                     if (diff == 0)
@@ -1117,8 +1131,10 @@ namespace Singularity.Apps {
                         spinner.visible = false;
                     }
                 } else {
-                    img.set_data<string>("thumb-for-path", "");
                     img.set_from_gicon(file_item.info.get_icon());
+                    if (!apply_plugin_icon(img, file_item, grid_icon_size)) {
+                        img.set_data<string>("thumb-for-path", "");
+                    }
                 }
                 // Cut visual feedback
                 bool is_cut = clipboard_is_cut && clipboard_file != null &&
@@ -2568,6 +2584,31 @@ namespace Singularity.Apps {
             _devices_section.append(disks_btn);
         }
 
+        private void rebuild_picker_devices_section() {
+            if (_picker_devices_section == null) return;
+            Gtk.Widget? child = _picker_devices_section.get_first_child();
+            while (child != null) {
+                Gtk.Widget? next = child.get_next_sibling();
+                _picker_devices_section.remove(child);
+                child = next;
+            }
+            bool any = false;
+            enumerate_storage((name, icon, path, volume) => {
+                if (!any) {
+                    _picker_devices_section.append(new Separator(Orientation.HORIZONTAL));
+                    _picker_devices_section.append(new Singularity.Widgets.SidebarSectionLabel(_("Devices")));
+                    any = true;
+                }
+                if (path != null) {
+                    add_disk_button(_picker_devices_section, name, path, icon);
+                } else if (volume != null) {
+                    var btn = new Singularity.Widgets.SidebarRow(icon, name);
+                    btn.clicked.connect(() => mount_volume_and_navigate(volume));
+                    _picker_devices_section.append(btn);
+                }
+            });
+        }
+
         // Disk button with async space bar showing used/total.
         private void add_disk_button(Box box, string name, string path, string icon) {
             var btn = new Button();
@@ -3125,6 +3166,26 @@ namespace Singularity.Apps {
             });
         }
 
+        private bool apply_plugin_icon(Image img, FileItem file_item, int size) {
+            var mgr = FilesPluginManager.get_default();
+            if (!mgr.has_icon_providers()) return false;
+            string? content_type = file_item.info.get_content_type();
+            var provider = mgr.provider_for(file_item.file, content_type);
+            if (provider == null) return false;
+            string? fpath = file_item.file.get_path();
+            if (fpath == null) return false;
+            img.set_data<string>("thumb-for-path", fpath);
+            provider.load_icon.begin(file_item.file, size, (obj, res) => {
+                var paintable = provider.load_icon.end(res);
+                if (paintable == null) return;
+                string? expected = img.get_data<string>("thumb-for-path");
+                if (expected != null && expected == fpath) {
+                    img.set_from_paintable(paintable);
+                }
+            });
+            return true;
+        }
+
         private async void navigate_to(File folder) {
             try {
                 // Request only the attributes we actually use; NOFOLLOW_SYMLINKS avoids
@@ -3354,6 +3415,68 @@ namespace Singularity.Apps {
                                       : "user-trash-symbolic");
         }
 
+        private string icon_name_from_gicon(GLib.Icon? gi, string fallback) {
+            if (gi is GLib.ThemedIcon) {
+                var names = ((GLib.ThemedIcon) gi).get_names();
+                foreach (var n in names) {
+                    if (!n.has_suffix("-symbolic")) return n;
+                }
+                if (names.length > 0) {
+                    string n = names[0];
+                    if (n.has_suffix("-symbolic"))
+                        return n.substring(0, n.length - "-symbolic".length);
+                    return n;
+                }
+            }
+            return fallback;
+        }
+
+        private void enumerate_storage(StorageEntryFunc fn) {
+            var vm = GLib.VolumeMonitor.get();
+            var seen = new GLib.GenericSet<string>(str_hash, str_equal);
+            foreach (var vol in vm.get_volumes()) {
+                var mount = vol.get_mount();
+                string name = vol.get_name() ?? _("Volume");
+                string icon = icon_name_from_gicon(vol.get_icon(), "drive-removable-media");
+                if (mount != null) {
+                    var mfile = mount.get_root();
+                    string? mpath = mfile != null ? (mfile.get_path() ?? mfile.get_uri()) : null;
+                    if (mpath == "/") continue;
+                    if (mpath != null) seen.add(mpath);
+                    fn(name, icon, mpath, null);
+                } else if (vol.can_mount()) {
+                    fn(name, icon, null, vol);
+                }
+            }
+            foreach (var mount in vm.get_mounts()) {
+                if (mount.get_volume() != null) continue;
+                var mfile = mount.get_root();
+                if (mfile == null) continue;
+                string mpath = mfile.get_path() ?? mfile.get_uri();
+                if (mpath == "/") continue;
+                if (seen.contains(mpath)) continue;
+                string name = mount.get_name() ?? GLib.Path.get_basename(mpath);
+                string icon = icon_name_from_gicon(mount.get_icon(), "drive-removable-media");
+                fn(name, icon, mpath, null);
+            }
+        }
+
+        private void mount_volume_and_navigate(GLib.Volume vol) {
+            var op = new Gtk.MountOperation(active_window);
+            vol.mount.begin(GLib.MountMountFlags.NONE, op, null, (obj, res) => {
+                try {
+                    vol.mount.end(res);
+                    var m = vol.get_mount();
+                    if (m != null) {
+                        var root = m.get_root();
+                        if (root != null) navigate_user(root);
+                    }
+                } catch (Error e) {
+                    warning("Failed to mount volume: %s", e.message);
+                }
+            });
+        }
+
         private void show_disks_page() {
             if (_disks_page_box == null || view_stack_ref == null) return;
             Widget child = path_bar.get_first_child();
@@ -3386,28 +3509,14 @@ namespace Singularity.Apps {
             disks_lbl.add_css_class("title");
             path_bar.append(disks_lbl);
 
-            // Build disk cards: root + mounted volumes
             add_disk_card(_disks_page_box, "File System", "/", "drive-harddisk");
-            var vm = GLib.VolumeMonitor.get();
-            foreach (var mount in vm.get_mounts()) {
-                var mfile = mount.get_root();
-                if (mfile == null) continue;
-                string mpath = mfile.get_path() ?? mfile.get_uri();
-                if (mpath == "/") continue;
-                string mname = mount.get_name() ?? GLib.Path.get_basename(mpath);
-                string micon = "drive-removable-media";
-                var gi = mount.get_icon();
-                if (gi is GLib.ThemedIcon) {
-                    var names = ((GLib.ThemedIcon) gi).get_names();
-                    // Use non-symbolic version: strip "-symbolic" suffix if present
-                    foreach (var n in names) {
-                        if (!n.has_suffix("-symbolic")) { micon = n; break; }
-                    }
-                    if (micon.has_suffix("-symbolic"))
-                        micon = micon.substring(0, micon.length - "-symbolic".length);
+            enumerate_storage((name, icon, path, volume) => {
+                if (path != null) {
+                    add_disk_card(_disks_page_box, name, path, icon);
+                } else if (volume != null) {
+                    add_disk_card_volume(_disks_page_box, name, icon, volume);
                 }
-                add_disk_card(_disks_page_box, mname, mpath, micon);
-            }
+            });
 
             view_stack_ref.visible_child_name = "disks";
         }
@@ -3480,6 +3589,48 @@ namespace Singularity.Apps {
                         size_lbl.label = _("%s free of %s").printf(free_str, total_str);
                     } catch { }
                 });
+        }
+
+        private void add_disk_card_volume(FlowBox box, string name, string icon, GLib.Volume volume) {
+            var btn = new Button();
+            btn.has_frame = true;
+            btn.add_css_class("disk-card");
+            btn.set_size_request(160, 160);
+            var vbox = new Box(Orientation.VERTICAL, 8);
+            vbox.margin_top = 14;
+            vbox.margin_bottom = 12;
+            vbox.margin_start = 12;
+            vbox.margin_end = 12;
+
+            var img = new Image();
+            img.pixel_size = 56;
+            img.halign = Align.CENTER;
+            img.set_from_icon_name(icon);
+            vbox.append(img);
+
+            var lbl = new Label(name);
+            lbl.halign = Align.CENTER;
+            lbl.ellipsize = Pango.EllipsizeMode.END;
+            lbl.max_width_chars = 12;
+            vbox.append(lbl);
+
+            var hint = new Label(_("Click to mount"));
+            hint.add_css_class("dim-label");
+            hint.halign = Align.CENTER;
+            hint.ellipsize = Pango.EllipsizeMode.END;
+            hint.max_width_chars = 14;
+            vbox.append(hint);
+
+            btn.set_child(vbox);
+            btn.clicked.connect(() => mount_volume_and_navigate(volume));
+
+            var fbi = new FlowBoxChild();
+            fbi.set_child(btn);
+            fbi.add_css_class("disk-card-child");
+            fbi.focusable = false;
+            fbi.halign = Align.START;
+            fbi.valign = Align.START;
+            box.append(fbi);
         }
 
         // Column browser (Miller columns)
@@ -3786,7 +3937,7 @@ namespace Singularity.Apps {
             if (info != null) {
                 var mod_time = info.get_modification_date_time();
                 if (mod_time != null) {
-                    add_info_row("Modified:", mod_time.format("%Y-%m-%d %H:%M"));
+                    add_info_row("Modified:", mod_time.to_local().format("%Y-%m-%d %H:%M"));
                 }
                 if (info.has_attribute(FileAttribute.UNIX_MODE)) {
                     uint32 mode = info.get_attribute_uint32(FileAttribute.UNIX_MODE);

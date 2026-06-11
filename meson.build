@@ -39,6 +39,7 @@ sources = files(
   'src/connect_server_dialog.vala',
   'src/portal_service.vala',
   'src/file_ops_manager.vala',
+  'src/files_plugin_manager.vala',
 )
 
 executable('singularity-files',
