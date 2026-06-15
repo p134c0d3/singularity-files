@@ -55,6 +55,7 @@ namespace Singularity.Apps {
         private Button? toolbar_search_btn = null;
         private Box? _places_box = null;
         private Gee.HashMap<string, Button> _place_buttons = new Gee.HashMap<string, Button>();
+        private Button? _disks_sidebar_btn = null;
         private Gtk.Label? _file_count_lbl = null;
         private Box? _bookmarks_section = null;
         private Box? _devices_section = null;
@@ -401,10 +402,12 @@ namespace Singularity.Apps {
                 window.add_bubble_widget(fwd_btn);
             }
             if (picker_mode) {
-                window.add_bubble_text("Cancel", () => {
+                var cancel_btn = new Button.with_label(_("Cancel"));
+                cancel_btn.clicked.connect(() => {
                     window.close();
                     if (portal_mode) quit();
                 });
+                window.add_bubble_widget(cancel_btn);
             }
             // Path bar wrapped in a Stack so we can swap it with an Entry (press "/")
             path_bar = new Box(Orientation.HORIZONTAL, 4);
@@ -700,6 +703,33 @@ namespace Singularity.Apps {
                         : (m == "column") ? "view-paged-symbolic" : "view-list-symbolic";
                 });
                 window.add_bubble_widget(view_btn);
+
+                var zoom_out_btn = new Button.from_icon_name("zoom-out-symbolic");
+                zoom_out_btn.has_frame = false;
+                zoom_out_btn.add_css_class("toolbar-button");
+                zoom_out_btn.tooltip_text = _("Smaller Icons (Ctrl+Minus)");
+                zoom_out_btn.clicked.connect(() => {
+                    settings.set_int("icon-size", int.max(24, settings.get_int("icon-size") - 8));
+                });
+                window.add_bubble_widget(zoom_out_btn);
+
+                var zoom_in_btn = new Button.from_icon_name("zoom-in-symbolic");
+                zoom_in_btn.has_frame = false;
+                zoom_in_btn.add_css_class("toolbar-button");
+                zoom_in_btn.tooltip_text = _("Bigger Icons (Ctrl+Plus)");
+                zoom_in_btn.clicked.connect(() => {
+                    settings.set_int("icon-size", int.min(128, settings.get_int("icon-size") + 8));
+                });
+                window.add_bubble_widget(zoom_in_btn);
+
+                bool zoom_visible = settings.get_string("view-mode") == "grid";
+                zoom_out_btn.visible = zoom_visible;
+                zoom_in_btn.visible = zoom_visible;
+                settings.changed["view-mode"].connect(() => {
+                    bool g = settings.get_string("view-mode") == "grid";
+                    zoom_out_btn.visible = g;
+                    zoom_in_btn.visible = g;
+                });
 
                 // Empty Trash button - shown only when in trash://
                 var etb = new Button.from_icon_name("user-trash-full-symbolic");
@@ -1203,6 +1233,7 @@ namespace Singularity.Apps {
             disks_fb.min_children_per_line = 2;
             disks_fb.selection_mode = SelectionMode.NONE;
             disks_scroll.set_child(disks_fb);
+            Singularity.Widgets.apply_titlebar_inset(disks_scroll);
             disks_wrapper.append(disks_scroll);
             stack.add_named(disks_wrapper, "disks");
             _disks_page_box = disks_fb;
@@ -2581,6 +2612,7 @@ namespace Singularity.Apps {
             disks_row.append(new Label(_("Disks")));
             disks_btn.set_child(disks_row);
             disks_btn.clicked.connect(show_disks_page);
+            _disks_sidebar_btn = disks_btn;
             _devices_section.append(disks_btn);
         }
 
@@ -2741,6 +2773,13 @@ namespace Singularity.Apps {
                     b.remove_css_class("sidebar-nav-active");
                 }
             }
+            if (_disks_sidebar_btn != null) _disks_sidebar_btn.remove_css_class("sidebar-nav-active");
+        }
+
+        private void mark_disks_sidebar_active() {
+            foreach (var entry in _place_buttons.entries)
+                entry.value.remove_css_class("sidebar-nav-active");
+            if (_disks_sidebar_btn != null) _disks_sidebar_btn.add_css_class("sidebar-nav-active");
         }
 
         private void clear_search() {
@@ -2765,6 +2804,12 @@ namespace Singularity.Apps {
             nav_index = (int)nav_history.length - 1;
             update_nav_buttons();
             navigate_to.begin(folder);
+        }
+
+        private Label make_path_separator() {
+            var sep = new Label("/");
+            sep.add_css_class("path-separator");
+            return sep;
         }
 
         private void update_path_bar(File folder) {
@@ -2836,7 +2881,7 @@ namespace Singularity.Apps {
                 int tail_n = 2;
                 int start_idx = truncate ? int.max(0, rel_segs.length - tail_n) : 0;
                 if (truncate) {
-                    path_bar.append(new Label("/"));
+                    path_bar.append(make_path_separator());
                     var ellipsis = new Label("..");
                     ellipsis.add_css_class("dim-label");
                     path_bar.append(ellipsis);
@@ -2845,7 +2890,7 @@ namespace Singularity.Apps {
                     string seg_path = home_dir;
                     for (int j = 0; j <= i; j++) seg_path += "/" + rel_segs[j];
                     string target = seg_path;
-                    path_bar.append(new Label("/"));
+                    path_bar.append(make_path_separator());
                     var btn = new Button.with_label(rel_segs[i]);
                     btn.add_css_class("flat");
                     btn.add_css_class("path-button");
@@ -2882,14 +2927,14 @@ namespace Singularity.Apps {
                 int tail_n = 2;
                 int start_idx = truncate ? int.max(0, (int)all_parts.length - tail_n) : 0;
                 if (truncate) {
-                    path_bar.append(new Label("/"));
+                    path_bar.append(make_path_separator());
                     var ellipsis = new Label("..");
                     ellipsis.add_css_class("dim-label");
                     path_bar.append(ellipsis);
                 }
                 for (int i = start_idx; i < (int)all_parts.length; i++) {
                     string target = all_paths.index(i);
-                    path_bar.append(new Label("/"));
+                    path_bar.append(make_path_separator());
                     var btn = new Button.with_label(all_parts.index(i));
                     btn.add_css_class("flat");
                     btn.add_css_class("path-button");
@@ -3497,17 +3542,7 @@ namespace Singularity.Apps {
 
             current_folder = null;
             if (empty_trash_btn != null) empty_trash_btn.visible = false;
-
-            // Update path bar
-            Widget pb_child = path_bar.get_first_child();
-            while (pb_child != null) {
-                var next2 = pb_child.get_next_sibling();
-                path_bar.remove(pb_child);
-                pb_child = next2;
-            }
-            var disks_lbl = new Label(_("Disks"));
-            disks_lbl.add_css_class("title");
-            path_bar.append(disks_lbl);
+            mark_disks_sidebar_active();
 
             add_disk_card(_disks_page_box, "File System", "/", "drive-harddisk");
             enumerate_storage((name, icon, path, volume) => {
